@@ -4,7 +4,7 @@
 // 	protoc        v7.34.1
 // source: api/api.proto
 
-package proto_generated
+package gen
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -223,7 +223,7 @@ const file_api_api_proto_rawDesc = "" +
 	"statusCode2|\n" +
 	"\x0fDistributedGrep\x12/\n" +
 	"\x04Grep\x12\x12.grepy.GrepRequest\x1a\x13.grepy.GrepResponse\x128\n" +
-	"\aGrepAdd\x12\x15.grepy.GrepAddRequest\x1a\x16.grepy.GrepAddResponseB\x13Z\x11./proto-generatedb\x06proto3"
+	"\aGrepAdd\x12\x15.grepy.GrepAddRequest\x1a\x16.grepy.GrepAddResponseB\vZ\t./pkg/genb\x06proto3"
 
 var (
 	file_api_api_proto_rawDescOnce sync.Once

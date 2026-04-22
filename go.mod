@@ -1,4 +1,4 @@
-module help
+module grep-distributed
 
 go 1.26.2
 
