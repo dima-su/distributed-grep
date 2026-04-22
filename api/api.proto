@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package grepy;
+option go_package = "./pb";
+
+message GrepRequest{
+  string query = 1;
+}
+
+message GrepResponse{
+  repeated string matches = 1;
+  int32 match_count = 2;
+}
+
+message GrepAddRequest{
+repeated string new_text = 1;
+}
+
+message GrepAddResponse{
+  int32 status_code = 1;
+}
+
+service DistributedGrep{
+  rpc Grep(GrepRequest) returns (GrepResponse);
+
+  rpc GrepAdd(GrepAddRequest) returns (GrepAddResponse);
+}
