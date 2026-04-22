@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package grepy;
-option go_package = "./pb";
+option go_package = "./proto-generated";
 
 message GrepRequest{
   string query = 1;
