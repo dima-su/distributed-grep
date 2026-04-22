@@ -13,21 +13,23 @@ import (
 )
 
 type GrepClient struct {
-	workerAdresses []string
-	connectedWorkers []grpc.ClientConn
+	workerAdresses   []string
+	connectedWorkers map[string]*grpc.ClientConn
 }
 
-func (client *GrepClient) ConnectWorkers (error){
-		for _, address := range client.workerAdresses {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func (client *GrepClient) ConnectWorkers() error {
+	client.connectedWorkers = make(map[string]*grpc.ClientConn)
+	for _, address := range client.workerAdresses {
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Printf("grpc couldn't establish connection with %v. error code: %v", address, err)
-			return []string{}, err
+			return err
 		} else {
-			client.connectedWorkers = append(client.connectedWorkers, conn)
+			client.connectedWorkers[address] = conn
 			log.Printf("gRPC established connection with worker on address %v", address)
 		}
-	
+	}
+	return nil
 }
 
 func (client *GrepClient) CallAllWorkers(query string) ([]string, error) {
@@ -48,7 +50,7 @@ func (client *GrepClient) CallAllWorkers(query string) ([]string, error) {
 			if err == nil {
 				resultChan <- oneAnsw
 			} else {
-				log.Printf("Worker %v couldn't grep. Error code: %v", address, err)
+				log.Printf("Worker %v couldn't grep. Error code: %v", conn, err)
 			}
 		}(reciever)
 	}
