@@ -3,6 +3,7 @@ package master
 import (
 	"context"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -15,6 +16,34 @@ import (
 type GrepClient struct {
 	workerAdresses   []string
 	connectedWorkers map[string]*grpc.ClientConn
+}
+
+func (client *GrepClient) AddWorkers(worker_adresses ...string) error {
+	for _, worker_adress := range worker_adresses {
+		for _, worker := range client.workerAdresses {
+			if worker == worker_adress {
+				log.Printf("Worker %v is already known.", worker_adress)
+				break
+			}
+		}
+		client.workerAdresses = append(client.workerAdresses, worker_adress)
+		log.Printf("Added worker %v", worker_adress)
+	}
+	return nil
+}
+
+func (client *GrepClient) DeleteWorkers(worker_adresses ...string) error {
+	for _, worker_adress := range worker_adresses {
+		for i, adress := range client.workerAdresses {
+			if adress == worker_adress {
+				client.workerAdresses = slices.Delete(client.workerAdresses, i, i+1)
+				log.Printf("Deleted worker %v", worker_adress)
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 func (client *GrepClient) ConnectWorkers() error {
@@ -55,15 +84,16 @@ func (client *GrepClient) CallAllWorkers(query string) ([]string, error) {
 		}(reciever)
 	}
 	go func() {
+		log.Println("Done calling workers, waiting. . .")
 		wg.Wait()
 		close(resultChan)
+		log.Println("Done waiting")
 	}()
 	log.Println("Got results from workers, summing up. . .")
 	var result []string
 	for res := range resultChan {
 		result = append(result, res.Matches...)
 	}
-	log.Println("Called all workers succesfully")
-
+	log.Println("Calling workers done")
 	return result, nil
 }
