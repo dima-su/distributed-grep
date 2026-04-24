@@ -34,7 +34,7 @@ func (client *GrepClient) DeleteWorkers(workerAddresses ...string) error {
 	defer client.mutx.Unlock()
 
 	for _, workerAddress := range workerAddresses {
-		client.workerAddresses[workerAddress] = struct{}{}
+		delete(client.workerAddresses, workerAddress)
 		log.Printf("Deleted worker %v", workerAddress)
 	}
 	return nil
@@ -50,6 +50,7 @@ func (client *GrepClient) DisconnectWorkers() error {
 		if err != nil {
 			log.Printf("Worker %v returned err %v", worker, err)
 		}
+		delete(client.connectedWorkers, worker)
 	}
 	return nil
 }
@@ -58,10 +59,10 @@ func (client *GrepClient) ConnectWorkers() error {
 	client.mutx.Lock()
 	defer client.mutx.Unlock()
 
-	client.DisconnectWorkers()
-
-	client.connectedWorkers = make(map[string]*grpc.ClientConn)
 	for address := range client.workerAddresses {
+		if _, connected := client.connectedWorkers[address]; connected {
+			continue
+		}
 		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Printf("grpc couldn't establish connection with %v. error code: %v", address, err)
@@ -74,30 +75,30 @@ func (client *GrepClient) ConnectWorkers() error {
 	return nil
 }
 
-func (client *GrepClient) CallAllWorkers(query string) ([]string, error) {
+func (client *GrepClient) CallAllWorkers(ctx context.Context, query string) ([]string, error) {
 	client.mutx.RLock()
 	defer client.mutx.RUnlock()
 
-	resultChan := make(chan *gen.GrepResponse, len(client.workerAddresses))
+	resultChan := make(chan *gen.GrepResponse, len(client.connectedWorkers))
 	var wg sync.WaitGroup
 
 	log.Println("Calling all workers. . .")
 
-	for _, conn := range client.connectedWorkers {
+	for addr, conn := range client.connectedWorkers {
 		wg.Add(1)
 		reciever := gen.NewDistributedGrepClient(conn)
 
-		go func(worker gen.DistributedGrepClient) {
+		go func(worker gen.DistributedGrepClient, address string) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			oneAnsw, err := reciever.Grep(ctx, &gen.GrepRequest{Query: query})
 			if err == nil {
 				resultChan <- oneAnsw
 			} else {
-				log.Printf("Worker %v couldn't grep. Error code: %v", conn, err)
+				log.Printf("Worker %v couldn't grep. Error code: %v", address, err)
 			}
-		}(reciever)
+		}(reciever, addr)
 	}
 	go func() {
 		log.Println("Done calling workers, waiting. . .")
