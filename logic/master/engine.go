@@ -1,9 +1,12 @@
 package master
 
+// If code isn't self-representative enough, it deserves rewriting, not commenting ;p
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gen "grep-distributed/api"
@@ -13,9 +16,16 @@ import (
 )
 
 type GrepClient struct {
-	workerAddresses  map[string]struct{}
-	connectedWorkers map[string]*grpc.ClientConn
-	mutx             sync.RWMutex
+	workerAddresses   map[string]struct{}
+	connectedWorkers  map[string]*grpc.ClientConn
+	mutx              sync.RWMutex
+	roundRobinCounter uint64
+}
+
+// Useless for now, maybe forever
+func NewGrepClient() *GrepClient {
+	ClientPointer := new(GrepClient)
+	return ClientPointer
 }
 
 func (client *GrepClient) AddWorkers(workerAddresses ...string) error {
@@ -71,6 +81,31 @@ func (client *GrepClient) ConnectWorkers() error {
 			client.connectedWorkers[address] = conn
 			log.Printf("gRPC established connection with worker on address %v", address)
 		}
+	}
+	return nil
+}
+
+func (client *GrepClient) AddTextToConnectedWorkers(ctx context.Context, query ...string) error {
+	if len(client.connectedWorkers) == 0 {
+		log.Println("No workers connected at this moment")
+		return errors.New("no connected workers")
+	}
+	client.mutx.RLock()
+	defer client.mutx.RUnlock()
+
+	connectedWorkersList := make([]*grpc.ClientConn, 0, len(client.connectedWorkers))
+	for _, connection := range client.connectedWorkers {
+		connectedWorkersList = append(connectedWorkersList, connection)
+	}
+	for _, text := range query {
+		current := atomic.AddUint64(&client.roundRobinCounter, 1)
+
+		sender := gen.NewDistributedGrepClient(connectedWorkersList[current%uint64(len(connectedWorkersList))])
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+
+		sender.GrepAdd(ctx, &gen.GrepAddRequest{NewText: []string{text}})
+
+		cancel()
 	}
 	return nil
 }
