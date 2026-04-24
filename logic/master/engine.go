@@ -3,7 +3,6 @@ package master
 import (
 	"context"
 	"log"
-	"slices"
 	"sync"
 	"time"
 
@@ -14,41 +13,55 @@ import (
 )
 
 type GrepClient struct {
-	workerAdresses   []string
+	workerAddresses  map[string]struct{}
 	connectedWorkers map[string]*grpc.ClientConn
+	mutx             sync.RWMutex
 }
 
-func (client *GrepClient) AddWorkers(worker_adresses ...string) error {
-	for _, worker_adress := range worker_adresses {
-		for _, worker := range client.workerAdresses {
-			if worker == worker_adress {
-				log.Printf("Worker %v is already known.", worker_adress)
-				break
-			}
-		}
-		client.workerAdresses = append(client.workerAdresses, worker_adress)
-		log.Printf("Added worker %v", worker_adress)
+func (client *GrepClient) AddWorkers(workerAddresses ...string) error {
+	client.mutx.Lock()
+	defer client.mutx.Unlock()
+
+	for _, workerAddress := range workerAddresses {
+		client.workerAddresses[workerAddress] = struct{}{}
+		log.Printf("Added worker %v", workerAddress)
 	}
 	return nil
 }
 
-func (client *GrepClient) DeleteWorkers(worker_adresses ...string) error {
-	for _, worker_adress := range worker_adresses {
-		for i, adress := range client.workerAdresses {
-			if adress == worker_adress {
-				client.workerAdresses = slices.Delete(client.workerAdresses, i, i+1)
-				log.Printf("Deleted worker %v", worker_adress)
-				break
-			}
+func (client *GrepClient) DeleteWorkers(workerAddresses ...string) error {
+	client.mutx.Lock()
+	defer client.mutx.Unlock()
+
+	for _, workerAddress := range workerAddresses {
+		client.workerAddresses[workerAddress] = struct{}{}
+		log.Printf("Deleted worker %v", workerAddress)
+	}
+	return nil
+}
+
+func (client *GrepClient) DisconnectWorkers() error {
+	client.mutx.Lock()
+	defer client.mutx.Unlock()
+
+	for worker := range client.connectedWorkers {
+		log.Printf("Worker %v is disconnected", worker)
+		err := client.connectedWorkers[worker].Close()
+		if err != nil {
+			log.Printf("Worker %v returned err %v", worker, err)
 		}
 	}
-
 	return nil
 }
 
 func (client *GrepClient) ConnectWorkers() error {
+	client.mutx.Lock()
+	defer client.mutx.Unlock()
+
+	client.DisconnectWorkers()
+
 	client.connectedWorkers = make(map[string]*grpc.ClientConn)
-	for _, address := range client.workerAdresses {
+	for address := range client.workerAddresses {
 		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Printf("grpc couldn't establish connection with %v. error code: %v", address, err)
@@ -62,7 +75,10 @@ func (client *GrepClient) ConnectWorkers() error {
 }
 
 func (client *GrepClient) CallAllWorkers(query string) ([]string, error) {
-	resultChan := make(chan *gen.GrepResponse, len(client.workerAdresses))
+	client.mutx.RLock()
+	defer client.mutx.RUnlock()
+
+	resultChan := make(chan *gen.GrepResponse, len(client.workerAddresses))
 	var wg sync.WaitGroup
 
 	log.Println("Calling all workers. . .")
